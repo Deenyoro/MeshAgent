@@ -120,6 +120,9 @@ int g_shutdown = 999;
 int g_pause = 0;
 int g_remotepause = 1;
 int g_restartcount = 0;
+static ULONGLONG g_lastKvmSpawnTick = 0;
+#define KVM_RESTART_MAX_BURST 5
+#define KVM_RESTART_HEALTHY_MS 30000
 struct tileInfo_t **tileInfo = NULL;
 int g_slavekvm = 0;
 static ILibProcessPipe_Process gChildProcess;
@@ -1280,8 +1283,11 @@ void kvm_relay_ExitHandler(ILibProcessPipe_Process sender, int exitCode, void *u
 	UNREFERENCED_PARAMETER(exitCode);
 	UNREFERENCED_PARAMETER(sender);
 
-	if (g_restartcount < 4 && g_shutdown == 0)
+	// A child that ran long enough was healthy, so its exit (desktop switch, logoff) starts a fresh burst
+	if (g_lastKvmSpawnTick != 0 && (GetTickCount64() - g_lastKvmSpawnTick) >= KVM_RESTART_HEALTHY_MS) { g_restartcount = 0; }
+	if (g_restartcount < KVM_RESTART_MAX_BURST && g_shutdown == 0)
 	{
+		g_restartcount++;
 		kvm_relay_restart(1, pipeMgr, exePath, writeHandler, reserved);
 	}
 	else
@@ -1387,6 +1393,7 @@ int kvm_relay_restart(int paused, void *pipeMgr, char *exePath, ILibKVM_WriteHan
 	gChildProcess = ILibProcessPipe_Manager_SpawnProcessEx3(pipeMgr, exePath, paused == 0 ? parms0 : parms1, gProcessSpawnType, (void *)(ULONG_PTR)gProcessTSID, 0);
 	gProcessSpawnType = (gProcessSpawnType == ILibProcessPipe_SpawnTypes_SPECIFIED_USER || gProcessSpawnType == ILibProcessPipe_SpawnTypes_USER) ? ILibProcessPipe_SpawnTypes_WINLOGON : (gProcessTSID < 0 ? ILibProcessPipe_SpawnTypes_USER : ILibProcessPipe_SpawnTypes_SPECIFIED_USER);
 
+	g_lastKvmSpawnTick = GetTickCount64();
 	g_slavekvm = ILibProcessPipe_Process_GetPID(gChildProcess);
 	char tmp[255];
 	sprintf_s(tmp, sizeof(tmp), "Child KVM (pid: %d)", g_slavekvm);
