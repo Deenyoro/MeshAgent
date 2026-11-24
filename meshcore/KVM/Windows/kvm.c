@@ -1387,6 +1387,15 @@ int kvm_relay_restart(int paused, void *pipeMgr, char *exePath, ILibKVM_WriteHan
 	gChildProcess = ILibProcessPipe_Manager_SpawnProcessEx3(pipeMgr, exePath, paused == 0 ? parms0 : parms1, gProcessSpawnType, (void *)(ULONG_PTR)gProcessTSID, 0);
 	gProcessSpawnType = (gProcessSpawnType == ILibProcessPipe_SpawnTypes_SPECIFIED_USER || gProcessSpawnType == ILibProcessPipe_SpawnTypes_USER) ? ILibProcessPipe_SpawnTypes_WINLOGON : (gProcessTSID < 0 ? ILibProcessPipe_SpawnTypes_USER : ILibProcessPipe_SpawnTypes_SPECIFIED_USER);
 
+	if (gChildProcess == NULL)
+	{
+		// Spawn failed (no console session, token or CreateProcess error): end the session instead of leaving an idle tunnel
+		ILibRemoteLogging_printf(ILibChainGetLogger(gILibChain), ILibRemoteLogging_Modules_Agent_KVM, ILibRemoteLogging_Flags_VerbosityLevel_1, "KVM [Master]: Failed to spawn Slave");
+		ILibMemory_Free(user);
+		g_slavekvm = 0;
+		writeHandler(NULL, 0, reserved);
+		return 0;
+	}
 	g_slavekvm = ILibProcessPipe_Process_GetPID(gChildProcess);
 	char tmp[255];
 	sprintf_s(tmp, sizeof(tmp), "Child KVM (pid: %d)", g_slavekvm);
